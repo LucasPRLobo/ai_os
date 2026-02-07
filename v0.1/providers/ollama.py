@@ -239,7 +239,14 @@ class OllamaProvider(BaseLLMProvider):
         # Add file_count if missing
         if "file_count" not in data:
             data["file_count"] = len(files)
-        
+
+        # Sanitize folder names — LLMs sometimes use "/" in names
+        self._sanitize_folder_names(data)
+
+        # Fix missing/duplicate files before validation
+        all_filenames = [f.name for f in files]
+        self._fix_file_assignments(data, all_filenames)
+
         # Convert to Pydantic model (validates structure)
         try:
             suggestion_response = SuggestionResponse(**data)
@@ -249,9 +256,67 @@ class OllamaProvider(BaseLLMProvider):
                 f"This shouldn't happen with schema enforcement.\n"
                 f"Data: {json.dumps(data, indent=2)[:500]}"
             )
-        
+
         return suggestion_response
     
+    @staticmethod
+    def _fix_file_assignments(data: dict, all_filenames: list):
+        """
+        Ensure every file appears exactly once in each suggestion.
+
+        - Removes duplicate assignments (keeps first occurrence)
+        - Adds missing files to an "Other" folder
+        - Removes hallucinated filenames not in the original list
+        """
+        filename_set = set(all_filenames)
+
+        for suggestion in data.get("suggestions", []):
+            folders = (
+                suggestion
+                .get("folder_structure", {})
+                .get("folders", [])
+            )
+
+            # Pass 1: Remove hallucinated files + deduplicate
+            seen = set()
+            for folder in folders:
+                cleaned = []
+                for fname in folder.get("files", []):
+                    if fname in filename_set and fname not in seen:
+                        cleaned.append(fname)
+                        seen.add(fname)
+                folder["files"] = cleaned
+
+            # Remove folders that ended up empty after cleaning
+            folders[:] = [f for f in folders if f.get("files")]
+
+            # Pass 2: Find missing files and add to "Other" folder
+            missing = [f for f in all_filenames if f not in seen]
+            if missing:
+                folders.append({
+                    "name": "Other",
+                    "files": missing,
+                })
+
+    @staticmethod
+    def _sanitize_folder_names(data: dict):
+        """
+        Clean up folder names that would fail Pydantic validation.
+
+        LLMs sometimes generate names with "/" or "\\" which aren't valid
+        for folder names. Replace with " - ".
+        """
+        for suggestion in data.get("suggestions", []):
+            folders = (
+                suggestion
+                .get("folder_structure", {})
+                .get("folders", [])
+            )
+            for folder in folders:
+                name = folder.get("name", "")
+                if "/" in name or "\\" in name:
+                    folder["name"] = name.replace("/", " - ").replace("\\", " - ")
+
     def _build_system_prompt(self) -> str:
         """Override to add Ollama-specific emphasis."""
         base_prompt = super()._build_system_prompt()

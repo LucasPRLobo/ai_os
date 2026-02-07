@@ -90,61 +90,61 @@ class BaseLLMProvider(ABC):
     
     def _build_system_prompt(self) -> str:
         """Build the system/instruction portion of the prompt."""
-        return """You are a file organizer. Create MULTIPLE different organization schemes for the same files.
+        return """You are an intelligent file organizer. You analyze files deeply and create detailed, specific organization schemes.
 
-TASK: Generate 2 DIFFERENT ways to organize the files. Each suggestion should use a different strategy.
+TASK: Generate 2-3 DIFFERENT ways to organize the given files. Each suggestion MUST use a fundamentally different strategy.
 
-STRATEGY 1 - BY SCENE/CONTENT TYPE:
-Group by what's in the image (selfies, beach, music, art, sports, etc.)
-Folder examples: "Selfies", "Beach & Pool", "Music & Events", "Art & Culture"
+STRATEGY TYPES (pick 2-3 that best fit the files):
 
-STRATEGY 2 - BY ACTIVITY/CONTEXT:
-Group by what the person was doing or the occasion
-Folder examples: "Night Out", "Outdoor Activities", "Creative Hobbies", "Fitness"
+1. BY CONTENT/TOPIC — Group by what the file IS ABOUT.
+   - Images: specific scenes (beach sunset, city nightlife, pet portrait, concert, hiking trail)
+   - Code: by project, language, or purpose (web frontend, data scripts, configs, tests)
+   - Documents: by topic (meeting notes, project plans, research, personal)
+   - Use SPECIFIC names, not generic ones. "Beach Sunset Photos" not just "Beach". "Python Data Scripts" not just "Code".
 
-IMPORTANT RULES:
-- Each suggestion MUST include ALL files
-- Each suggestion should use a DIFFERENT organization logic
-- Use descriptive folder names (not filenames or UUIDs)
+2. BY PURPOSE/WORKFLOW — Group by HOW the user would use or access these files.
+   - "Work Projects", "Personal Creative", "Reference & Config", "Social Media"
+   - Think about WHY someone has these files together
 
-OUTPUT FORMAT (JSON only):
+3. BY TYPE & FORMAT — Group primarily by file type with subcategories.
+   - "Photos/Outdoor", "Photos/People", "Source Code/Python", "Source Code/JavaScript", "Config Files"
+
+CRITICAL RULES:
+- EVERY file in the list MUST appear in EXACTLY ONE folder in EACH suggestion. No file may be missing.
+- Be SPECIFIC with folder names — "Jazz Night Photography" is better than "Creative Hobbies"
+- Create 3-6 folders per suggestion (not too few, not too many)
+- For code/text files: use their content analysis (topics, language, summary) to place them meaningfully
+- Never use filenames or UUIDs as folder names
+- Folder names MUST NOT contain "/" or "\" — use " - " or " & " instead (e.g. "Source Code - Python" not "Source Code/Python")
+
+OUTPUT FORMAT (respond with ONLY this JSON, no other text):
 {
   "suggestions": [
     {
       "folder_structure": {
-        "base_path": "Photos/By Content",
+        "base_path": "Organized/By Content",
         "folders": [
-          {"name": "Selfies", "files": ["file1.jpg", "file2.jpg"]},
-          {"name": "Beach", "files": ["file3.jpg"]}
+          {"name": "Beach & Outdoor Adventures", "files": ["photo1.jpg", "photo2.jpg"]},
+          {"name": "Python Data Analysis", "files": ["analysis.py", "data_utils.py"]},
+          {"name": "Project Configuration", "files": ["config.yaml", ".env"]}
         ]
       },
       "confidence": 0.90,
-      "reasoning": "Organized by scene type - groups similar content together"
-    },
-    {
-      "folder_structure": {
-        "base_path": "Photos/By Activity",
-        "folders": [
-          {"name": "Night Out", "files": ["file1.jpg", "file4.jpg"]},
-          {"name": "Relaxation", "files": ["file2.jpg", "file3.jpg"]}
-        ]
-      },
-      "confidence": 0.85,
-      "reasoning": "Organized by activity - groups by what you were doing"
+      "reasoning": "Groups files by their specific content and subject matter"
     }
   ],
-  "file_count": 4,
-  "analysis_summary": "Generated 2 organization options"
+  "file_count": 5,
+  "analysis_summary": "Generated N organization options"
 }"""
     
     def _format_files_with_analysis(
-        self, 
+        self,
         files: List[FileMetadata],
         analysis_context: Dict[str, Any]
     ) -> str:
         """
         Format files with their rich analysis for the prompt.
-        
+
         Args:
             files: List of FileMetadata
             analysis_context: Dict with image_analysis, text_analysis, etc.
@@ -152,79 +152,96 @@ OUTPUT FORMAT (JSON only):
         image_analysis = analysis_context.get("image_analysis", [])
         text_analysis = analysis_context.get("text_analysis", [])
         document_analysis = analysis_context.get("document_analysis", [])
-        
+
         # Create lookup maps by file path
         image_map = {img.file_path: img for img in image_analysis}
         text_map = {t.get("file_path", ""): t for t in text_analysis}
         doc_map = {d.get("file_path", ""): d for d in document_analysis}
-        
+
         lines = []
-        
-        # Group files by scene for easy reference
-        scene_groups = {}
-        setting_groups = {}  # indoor/outdoor
-        
-        for file in files:
-            if file.path in image_map:
-                img = image_map[file.path]
-                scene = img.scene_type or "other"
-                setting = img.indoor_outdoor or "unknown"
-            else:
-                scene = file.content_type or "other"
-                setting = "unknown"
-            
-            if scene not in scene_groups:
-                scene_groups[scene] = []
-            scene_groups[scene].append(file.name)
-            
-            if setting not in setting_groups:
-                setting_groups[setting] = []
-            setting_groups[setting].append(file.name)
-        
-        # Show grouped summary - this helps LLM generate different strategies
         lines.append("=" * 60)
         lines.append(f"ORGANIZE THESE {len(files)} FILES")
         lines.append("=" * 60)
         lines.append("")
-        
-        # Strategy 1 hint: By scene/content
-        lines.append("📷 BY SCENE TYPE (Strategy 1):")
-        for scene, filenames in sorted(scene_groups.items()):
-            folder_name = self._scene_to_folder(scene)
-            lines.append(f"   {scene} ({len(filenames)} files) → \"{folder_name}\"")
-            for fn in filenames:
-                lines.append(f"      - {fn}")
-        lines.append("")
-        
-        # Strategy 2 hint: By setting
-        lines.append("🏠 BY SETTING (Strategy 2):")
-        for setting, filenames in sorted(setting_groups.items()):
-            lines.append(f"   {setting} ({len(filenames)} files)")
-            for fn in filenames[:5]:
-                lines.append(f"      - {fn}")
-            if len(filenames) > 5:
-                lines.append(f"      ... and {len(filenames) - 5} more")
-        lines.append("")
-        
-        lines.append("")
-        lines.append("=" * 60)
-        lines.append(f"COMPLETE FILE LIST ({len(files)} files):")
-        lines.append("=" * 60)
+
+        # Detailed per-file analysis — give the LLM maximum context
+        lines.append("DETAILED FILE ANALYSIS:")
+        lines.append("-" * 40)
+
         for i, file in enumerate(files, 1):
             if file.path in image_map:
                 img = image_map[file.path]
-                scene = img.scene_type or "other"
-                setting = img.indoor_outdoor or "?"
-                lines.append(f"  {i}. {file.name} [scene={scene}, {setting}]")
+                desc = img.description or "no description"
+                scene = img.scene_type or "unknown"
+                setting = img.indoor_outdoor or "unknown"
+                objects = ", ".join(img.objects[:5]) if img.objects else "none detected"
+                activities = ", ".join(img.activities[:3]) if img.activities else "none"
+                people = img.people_count if img.people_count else 0
+                location = img.get_primary_location() or "unknown"
+
+                lines.append(f"  {i}. {file.name} [IMAGE]")
+                lines.append(f"     Description: {desc}")
+                lines.append(f"     Scene: {scene} | Setting: {setting} | People: {people}")
+                lines.append(f"     Objects: {objects}")
+                if activities != "none":
+                    lines.append(f"     Activities: {activities}")
+                if location != "unknown":
+                    lines.append(f"     Location: {location}")
+
+            elif file.path in text_map:
+                t = text_map[file.path]
+                doc_type = t.get("document_type", "unknown")
+                language = t.get("language")
+                topics = ", ".join(t.get("topics", [])) if t.get("topics") else None
+                summary = t.get("summary")
+
+                lines.append(f"  {i}. {file.name} [TEXT — {doc_type}]")
+                if language:
+                    lines.append(f"     Language: {language}")
+                if summary:
+                    lines.append(f"     Summary: {summary}")
+                elif file.content_preview:
+                    preview = file.content_preview[:150].replace("\n", " ")
+                    lines.append(f"     Preview: {preview}")
+                if topics:
+                    lines.append(f"     Topics: {topics}")
+
+            elif file.path in doc_map:
+                d = doc_map[file.path]
+                detailed_type = d.get("detailed_type", file.content_type)
+                size_cat = d.get("size_category", "unknown")
+                lines.append(f"  {i}. {file.name} [DOCUMENT — {detailed_type}, {size_cat}]")
             else:
-                lines.append(f"  {i}. {file.name} [type={file.content_type}]")
-        
+                lines.append(f"  {i}. {file.name} [{file.content_type or 'unknown'}]")
+
+            lines.append("")
+
+        # Summary counts
+        n_images = len([f for f in files if f.path in image_map])
+        n_text = len([f for f in files if f.path in text_map])
+        n_docs = len([f for f in files if f.path in doc_map])
+        n_other = len(files) - n_images - n_text - n_docs
+
+        lines.append("=" * 60)
+        lines.append(f"SUMMARY: {len(files)} files total")
+        parts = []
+        if n_images: parts.append(f"{n_images} images")
+        if n_text: parts.append(f"{n_text} text/code")
+        if n_docs: parts.append(f"{n_docs} documents")
+        if n_other: parts.append(f"{n_other} other")
+        lines.append(f"  {', '.join(parts)}")
+        lines.append("")
+
+        # File name checklist — reinforces that ALL must be included
+        lines.append("ALL FILES (every one must appear in every suggestion):")
+        for file in files:
+            lines.append(f"  - {file.name}")
+
         lines.append("")
         lines.append("=" * 60)
-        lines.append(f"CREATE 2-3 DIFFERENT ORGANIZATION SCHEMES FOR ALL {len(files)} FILES.")
-        lines.append("Each scheme should use a different strategy (by content, by activity, by setting).")
+        lines.append(f"Generate 2-3 DIFFERENT organization schemes. Be SPECIFIC with folder names.")
         lines.append("=" * 60)
-        
+
         return "\n".join(lines)
     
     def _scene_to_folder(self, scene: str) -> str:

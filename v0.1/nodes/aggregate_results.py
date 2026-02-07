@@ -28,10 +28,10 @@ def aggregate_results(state: OrganizerState) -> OrganizerState:
     warnings = state.get("warnings", []).copy()
     
     # Gather all analysis results
-    image_analysis = state.get("image_analysis", [])
-    text_analysis = state.get("text_analysis", [])
-    document_analysis = state.get("document_analysis", [])
-    other_files = state.get("other_files", [])
+    image_analysis = state.get("image_analysis") or []
+    text_analysis = state.get("text_analysis") or []
+    document_analysis = state.get("document_analysis") or []
+    other_files = state.get("other_files") or []
     
     # Create aggregated summary
     aggregated = {
@@ -204,23 +204,55 @@ def _extract_image_patterns(image_analysis: List[Any]) -> Dict:
 def _extract_text_patterns(text_analysis: List[Any]) -> Dict:
     """
     Extract common patterns from text analysis results.
-    
+
     Args:
-        text_analysis: List of text analysis objects
-        
+        text_analysis: List of text analysis dicts (from analyze_text node)
+
     Returns:
         Dictionary with pattern information
     """
+    from collections import Counter
+
     patterns = {
         "common_topics": [],
         "document_types": [],
         "has_code": False,
         "languages": []
     }
-    
-    # TODO: Implement text pattern extraction
-    # This will be filled in when we build text analysis
-    
+
+    if not text_analysis:
+        return patterns
+
+    # Collect topics across all text files
+    all_topics = []
+    for entry in text_analysis:
+        topics = entry.get("topics") or []
+        all_topics.extend(topics)
+
+    if all_topics:
+        topic_counts = Counter(all_topics)
+        patterns["common_topics"] = [t for t, _ in topic_counts.most_common(5)]
+
+    # Collect document types and their counts
+    doc_types = [entry.get("document_type", "other") for entry in text_analysis]
+    if doc_types:
+        type_counts = Counter(doc_types)
+        patterns["document_types"] = [
+            {"type": t, "count": c} for t, c in type_counts.most_common()
+        ]
+
+    # Detect code files and languages
+    languages = []
+    for entry in text_analysis:
+        lang = entry.get("language")
+        if lang:
+            languages.append(lang)
+
+    if languages:
+        patterns["has_code"] = True
+        lang_counts = Counter(languages)
+        patterns["languages"] = [l for l, _ in lang_counts.most_common(5)]
+
     return patterns
 
 
