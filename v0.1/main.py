@@ -20,6 +20,7 @@ from graph.main_graph import create_organization_graph
 from nodes.confirm_selection import confirm_selection, auto_confirm_first
 from nodes.file_mover import execute_organization
 from utils.progress import init_progress
+from nodes.learning_node import learn_from_choice 
 
 
 def main():
@@ -199,6 +200,10 @@ Examples:
         # Execute organization
         if state.get("selected_suggestion"):
             state = execute_organization(state)
+
+        
+            state = learn_from_choice(state)
+            
             
             # Show execution result
             result = state.get("execution_result", {})

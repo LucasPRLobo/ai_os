@@ -1,1 +1,6 @@
 pydantic
+langgraph
+requests
+Pillow
+piexif
+pillow-heif

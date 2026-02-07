@@ -14,6 +14,7 @@ from nodes.aggregate_results import aggregate_results
 from nodes.llm_analyzer import analyze_with_llm
 from nodes.confirm_selection import confirm_selection, auto_confirm_first
 from nodes.file_mover import execute_organization, dry_run_organization
+from nodes.learning_node import learn_from_choice
 
 __all__ = [
     "validate_input",
@@ -29,4 +30,5 @@ __all__ = [
     "auto_confirm_first",
     "execute_organization",
     "dry_run_organization",
+    "learn_from_choice",
 ]

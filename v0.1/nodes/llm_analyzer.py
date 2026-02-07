@@ -5,7 +5,7 @@ Analyzes files using LLM provider and generates organization suggestions.
 This node receives all analysis results (images, text, documents) and 
 passes them to the LLM for intelligent organization suggestions.
 """
-
+from learning.preference_applier import apply_preferences
 from models.state import OrganizerState
 from providers.base import (
     ProviderNotAvailableError,
@@ -31,11 +31,11 @@ def analyze_with_llm(state: OrganizerState) -> OrganizerState:
     """
     update_progress("analyze_with_llm", "running")
     
-    files = state.get("files", [])
-    image_analysis = state.get("image_analysis", [])
-    text_analysis = state.get("text_analysis", [])
-    document_analysis = state.get("document_analysis", [])
-    aggregated = state.get("aggregated_analysis", {})
+    files = state.get("files") or []
+    image_analysis = state.get("image_analysis") or []
+    text_analysis = state.get("text_analysis") or []
+    document_analysis = state.get("document_analysis") or []
+    aggregated = state.get("aggregated_analysis") or {}
     
     llm_provider = state.get("llm_provider", "ollama")
     llm_model = state.get("llm_model")
@@ -101,6 +101,14 @@ def analyze_with_llm(state: OrganizerState) -> OrganizerState:
     state["warnings"] = warnings
     
     show_summary(state)
+
+    try:
+        state["suggestions"] = apply_preferences(state["suggestions"])
+    except Exception as e:
+        # Don't fail if preferences can't be applied
+        warnings.append(f"Could not apply preferences: {str(e)}")
+        state["warnings"] = warnings
+
     return state
 
 
